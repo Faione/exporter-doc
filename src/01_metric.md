@@ -28,13 +28,13 @@ Metric有四种类型[^2], Counter、Gauge、Histogram和Summary，用于不同�
 
 基础类型，表示单个单调递增的单个数值类型，对应的value只能增加或是通过重启程序来清0，如请求的次数，完成任务的数量，错误数量等
 
-![](./img/2023-03-16-17-38-15.png)
+![](2023-03-16-17-38-15.png)
 
 **Guage**
 
 基础类型，表示单个数值类型，但能够任意的增加或减少，如当前的温度，内存使用，并发请求的数量等
 
-![](./img/2023-03-16-17-38-25.png)
+![](2023-03-16-17-38-25.png)
 
 **Histogram**: 
 
@@ -43,11 +43,11 @@ Metric有四种类型[^2], Counter、Gauge、Histogram和Summary，用于不同�
 - `base_name_totoal_count`: Counter类型, 保存采样数量(次数)，也即`base_name_bucket{le="inf"}` 的值
 - `base_name_totoal_sum`: Counter类型, 保存采样值之和
 
-![](./img/2023-03-16-17-38-41.png)
+![](2023-03-16-17-38-41.png)
 
 **Summary**
 
-复合类型, Summay与Histogram类似，同样是一个符合指标，衍生了三个子指标
+复合类型, Summay与Histogram类似，同样是一个复合指标，衍生了三个子指标
 - `base_name{quantile="0.5"}`: 保存Summary采样周期内，50分位采样值
 - `base_name_totoal_count`: Counter类型，保存采样次数
 - `base_name_totoal_sum`: Counter类型，保存采样值之和
@@ -77,4 +77,3 @@ Metric有四种类型[^2], Counter、Gauge、Histogram和Summary，用于不同�
 [^5]: [how_summary_work](https://www.robustperception.io/how-does-a-prometheus-summary-work/)
 
 [^6]: [histogram_or_summary](https://bryce.fisher-fleig.org/prometheus-histograms/)
-

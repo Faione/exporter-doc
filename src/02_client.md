@@ -2,7 +2,10 @@
 
 - [Client](#client)
 	- [一、Desc \& Metric](#一desc--metric)
-	- [二、Collector](#二collector)
+	- [二、Basic Metric](#二basic-metric)
+		- [Collector](#collector)
+		- [Basic Collector](#basic-collector)
+		- [Collector Vector](#collector-vector)
 	- [三、Registry](#三registry)
 		- [数据结构](#数据结构)
 		- [Register](#register)
@@ -16,6 +19,7 @@
 > Desc 在创建 Metric 时被初始化，并在此后一直保持不变。它是 Metric 的唯一标识符，用于区分不同的指标。因此，我们可以通过 Desc 来查询和操作 Metric。
 > 需要注意的是，Desc 只是 Metric 的元数据，它并不包含任何数据点。实际上，Metric 的值是由采集器（Collector）生成的，并存储在时间序列（Time Series）中。每个 Time Series 都包含一个具体的值和一组标签，这些标签可以对 Metric 进行分类和筛选。
 > 总之，Desc 是 Prometheus Metric 不可或缺的组成部分，它提供了 Metric 的基本信息和结构定义，为采集器和监控系统提供了统一的接口和语义
+> fqName: fully-qualified name
 
 用户通过设置 `NewDesc` 创建 Desc, `id`、`dimHash`、`err`则由prometheus生成，其中
 - id: 是 `fqName` 与 `ConstLabels Value` 的hash, 作为 `Desc` 的唯一标识符, 这意味着即便 `fqName` 相同，但 `ConstLabel Values` 不同的指标id不相同
@@ -50,20 +54,135 @@ type Desc struct {
 }
 ```
 
-## 二、Collector
+Metric 是一个接口，采集时调用 `Write` 将编码好的 Metric 数据写入到 `*dto.Metric` 中
 
-prometheus中定义了Collector接口，任何用于采集metrics的方式都需要实现此接口，并且在注册到prometheus之后才能进行采集[^1]
+```go
+type Metric interface {
+	// Desc returns the descriptor for the Metric. This method idempotently
+	// returns the same descriptor throughout the lifetime of the
+	// Metric. The returned descriptor is immutable by contract. A Metric
+	// unable to describe itself must return an invalid descriptor (created
+	// with NewInvalidDesc).
+	Desc() *Desc
+	// Write encodes the Metric into a "Metric" Protocol Buffer data
+	// transmission object.
+	//
+	// Metric implementations must observe concurrency safety as reads of
+	// this metric may occur at any time, and any blocking occurs at the
+	// expense of total performance of rendering all registered
+	// metrics. Ideally, Metric implementations should support concurrent
+	// readers.
+	//
+	// While populating dto.Metric, it is the responsibility of the
+	// implementation to ensure validity of the Metric protobuf (like valid
+	// UTF-8 strings or syntactically valid metric and label names). It is
+	// recommended to sort labels lexicographically. Callers of Write should
+	// still make sure of sorting if they depend on it.
+	Write(*dto.Metric) error
+	// TODO(beorn7): The original rationale of passing in a pre-allocated
+	// dto.Metric protobuf to save allocations has disappeared. The
+	// signature of this method should be changed to "Write() (*dto.Metric,
+	// error)".
+}
+```
+
+## 二、Basic Metric
+
+### Collector
+
+`Collector` 接口是 prometheus 客户端库提供的一个接口，用于描述如何采集指标数据，并将其暴露给 Prometheus 服务器。该接口定义了以下方法：
+
+Describe(chan<- *Desc)：将该 collector 添加的指标的 metadata（如名称、帮助信息、标签等）发送到 chan<- *Desc 中
+Collect(chan<- Metric)：将该 collector 表示的指标数据发送到 chan<- Metric 中
+
 
 ```go
 // prometheus/collector.go #27
 
+// Collector is the interface implemented by anything that can be used by
+// Prometheus to collect metrics. A Collector has to be registered for
+// collection. See Registerer.Register.
+//
+// The stock metrics provided by this package (Gauge, Counter, Summary,
+// Histogram, Untyped) are also Collectors (which only ever collect one metric,
+// namely itself). An implementer of Collector may, however, collect multiple
+// metrics in a coordinated fashion and/or create metrics on the fly. Examples
+// for collectors already implemented in this library are the metric vectors
+// (i.e. collection of multiple instances of the same Metric but with different
+// label values) like GaugeVec or SummaryVec, and the ExpvarCollector.
 type Collector interface {
-
+	// Describe sends the super-set of all possible descriptors of metrics
+	// collected by this Collector to the provided channel and returns once
+	// the last descriptor has been sent. The sent descriptors fulfill the
+	// consistency and uniqueness requirements described in the Desc
+	// documentation.
+	//
+	// It is valid if one and the same Collector sends duplicate
+	// descriptors. Those duplicates are simply ignored. However, two
+	// different Collectors must not send duplicate descriptors.
+	//
+	// Sending no descriptor at all marks the Collector as “unchecked”,
+	// i.e. no checks will be performed at registration time, and the
+	// Collector may yield any Metric it sees fit in its Collect method.
+	//
+	// This method idempotently sends the same descriptors throughout the
+	// lifetime of the Collector. It may be called concurrently and
+	// therefore must be implemented in a concurrency safe way.
+	//
+	// If a Collector encounters an error while executing this method, it
+	// must send an invalid descriptor (created with NewInvalidDesc) to
+	// signal the error to the registry.
 	Describe(chan<- *Desc)
-
+	// Collect is called by the Prometheus registry when collecting
+	// metrics. The implementation sends each collected metric via the
+	// provided channel and returns once the last metric has been sent. The
+	// descriptor of each sent metric is one of those returned by Describe
+	// (unless the Collector is unchecked, see above). Returned metrics that
+	// share the same descriptor must differ in their variable label
+	// values.
+	//
+	// This method may be called concurrently and must therefore be
+	// implemented in a concurrency safe way. Blocking occurs at the expense
+	// of total performance of rendering all registered metrics. Ideally,
+	// Collector implementations support concurrent readers.
 	Collect(chan<- Metric)
 }
 ```
+
+### Basic Collector
+
+prometheus 提供了 `Counter`, `Guage`, `Histogram`, `Summary` 四个基本指标，他们都实现了 Collector 接口, 主要由 Desc 和 观测值 组成，包含以下特征: 
+- 仅对外提供一套接口方法，通过封装私有变量的方式来控制对观测值的操作
+- `Histogram` 和 `Summary` 是对观测值的进一步统计，相比于只记录单一观测值的 `Counter`, `Guage` 而言更加复杂, 实质是一种复合指标
+
+如在 gauge 中, desc 是描述符，valBits 保存了观测值比特值，selfCollector 是一个匿名结构体，提供了 Collector 的通用实现，gauge 本身只是实现了 Metric 接口，由于嵌入了 selfCollector 因此也继承了 Collector 的实现
+
+```go
+type gauge struct {
+	valBits uint64
+    desc     *Desc
+	selfCollector
+	...
+}
+```
+prometheus client 中的 Metric 都是线程安全的，底层通过 atomic 来保证并发访问的正确性
+- Go 中并没有提供对 float64 的原子操作函数，因此Client中使用了自旋锁了操作 uint64 变量，并通过 math 库来进行 float64 与 uint64 之间的转换
+
+```go
+func (g *gauge) Add(val float64) {
+	for {
+		oldBits := atomic.LoadUint64(&g.valBits)
+		newBits := math.Float64bits(math.Float64frombits(oldBits) + val)
+		if atomic.CompareAndSwapUint64(&g.valBits, oldBits, newBits) {
+			return
+		}
+	}
+}
+```
+
+### Collector Vector
+
+Vector Collector 维护了一个 Metric 集合，这些 Metric 共享相同的 Desc, 通过不同的 VariableLabel Values 进行区分， 可使用 `WithLabelValues`， 来插入一个新的 Metric 或对一个已有的 Metric 进行更新
 
 ## 三、Registry
 

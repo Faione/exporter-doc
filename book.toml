@@ -4,3 +4,8 @@ language = "en"
 multilingual = false
 src = "src"
 title = "exporter-doc"
+
+
+[output.html]
+git-repository-url = "https://github.com/Faione/exporter-doc"
+git-repository-icon = "fa-github"
