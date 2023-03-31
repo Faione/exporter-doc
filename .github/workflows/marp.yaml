@@ -1,0 +1,24 @@
+name: DeployMarp
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # To push a branch
+      pull-requests: write # To create a PR from that branch
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Deploy GitHub Pages
+        uses: ralexander-phi/marp-action@master
+        env:
+          MARP_ARGS: " --html --input-dir slide/ --output doc/"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PUBLISH_TO_BRANCH: gh-pages
