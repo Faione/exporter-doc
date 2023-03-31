@@ -24,7 +24,7 @@ jobs:
         run: |
           mkdir marp-cli
           curl -sSL https://github.com/marp-team/marp-cli/releases/download/v2.4.0/marp-cli-v2.4.0-linux.tar.gz | tar -xz --directory=./marp-cli
-          echo `pwd`/mdbook >> $GITHUB_PATH
+          echo `pwd`/marp-cli >> $GITHUB_PATH
       - name: Deploy GitHub Pages
         run: |
           # This assumes your book is in the root of your repository.
