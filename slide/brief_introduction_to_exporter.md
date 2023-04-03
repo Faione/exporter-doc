@@ -158,6 +158,9 @@ Histogram 和 Summary 功能类似，但在分位数生成的方式上存在不�
 - Collector
 - Registry
 - PromHandler
+--- 
+
+![bg center: 70%](./img/tiny_exporter.svg)
 
 ---
 ## Prometheus Client
@@ -441,10 +444,6 @@ PromHandler是一个简单的Http Handler, 主要逻辑为:
 
 ---
 
-
-![bg center: 70%](./img/tiny_exporter.svg)
-
----
 <!-- _class: lead -->
 
 ?&#
